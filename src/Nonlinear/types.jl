@@ -64,46 +64,49 @@ struct Node
 end
 
 """
-    struct Expression
+    struct Expression{T}
         nodes::Vector{Node}
-        values::Vector{Float64}
+        values::Vector{T}
     end
 
 The core type that represents a nonlinear expression. See the MathOptInterface
 documentation for information on how the nodes and values form an expression
 tree.
 """
-struct Expression
+struct Expression{T}
     nodes::Vector{Node}
-    values::Vector{Float64}
-    Expression() = new(Node[], Float64[])
+    values::Vector{T}
+
+    Expression{T}() where {T} = new{T}(Node[], T[])
 end
+
+Expression() = Expression{Float64}()
 
 function Base.:(==)(x::Expression, y::Expression)
     return x.nodes == y.nodes && x.values == y.values
 end
 
 """
-    struct Constraint
-        expression::Expression
+    struct Constraint{T}
+        expression::Expression{T}
         set::Union{
-            MOI.LessThan{Float64},
-            MOI.GreaterThan{Float64},
-            MOI.EqualTo{Float64},
-            MOI.Interval{Float64},
+            MOI.LessThan{T},
+            MOI.GreaterThan{T},
+            MOI.EqualTo{T},
+            MOI.Interval{T},
         }
     end
 
 A type to hold information relating to the nonlinear constraint `f(x) in S`,
 where `f(x)` is defined by `.expression`, and `S` is `.set`.
 """
-struct Constraint
-    expression::Expression
+struct Constraint{T}
+    expression::Expression{T}
     set::Union{
-        MOI.LessThan{Float64},
-        MOI.GreaterThan{Float64},
-        MOI.EqualTo{Float64},
-        MOI.Interval{Float64},
+        MOI.LessThan{T},
+        MOI.GreaterThan{T},
+        MOI.EqualTo{T},
+        MOI.Interval{T},
     }
 end
 
@@ -154,28 +157,30 @@ It has the following fields:
  * `constraints::OrderedDict{ConstraintIndex,Constraint}` : a map from
    [`ConstraintIndex`](@ref) to the corresponding [`Constraint`](@ref). An
    `OrderedDict` is used instead of a `Vector` to support constraint deletion.
- * `parameters::Vector{Float64}` : holds the current values of the parameters.
+ * `parameters::Vector{T}` : holds the current values of the parameters.
  * `operators::OperatorRegistry` : stores the operators used in the model.
 """
-mutable struct Model
-    objective::Union{Nothing,Expression}
-    expressions::Vector{Expression}
-    constraints::OrderedDict{ConstraintIndex,Constraint}
-    parameters::Vector{Float64}
+mutable struct Model{T}
+    objective::Union{Nothing,Expression{T}}
+    expressions::Vector{Expression{T}}
+    constraints::OrderedDict{ConstraintIndex,Constraint{T}}
+    parameters::Vector{T}
     operators::OperatorRegistry
-    # This is a private field, used only to increment the ConstraintIndex.
     last_constraint_index::Int64
-    function Model()
-        return new(
+
+    function Model{T}() where {T}
+        return new{T}(
             nothing,
-            Expression[],
-            OrderedDict{ConstraintIndex,Constraint}(),
-            Float64[],
+            Expression{T}[],
+            OrderedDict{ConstraintIndex,Constraint{T}}(),
+            T[],
             OperatorRegistry(),
             0,
         )
     end
 end
+
+Model() = Model{Float64}()
 
 """
     AbstractAutomaticDifferentiation
@@ -200,9 +205,9 @@ end
 
 Create `Evaluator`, a subtype of `MOI.AbstractNLPEvaluator`, from `Model`.
 """
-mutable struct Evaluator{B} <: MOI.AbstractNLPEvaluator
+mutable struct Evaluator{T,B} <: MOI.AbstractNLPEvaluator
     # The internal datastructure.
-    model::Model
+    model::Model{T}
     # The abstract-differentiation backend
     backend::B
     # ordered_constraints is needed because `OrderedDict` doesn't support
@@ -210,7 +215,7 @@ mutable struct Evaluator{B} <: MOI.AbstractNLPEvaluator
     ordered_constraints::Vector{ConstraintIndex}
     # Storage for the NLPBlockDual, so that we can query the dual of individual
     # constraints without needing to query the full vector each time.
-    constraint_dual::Vector{Float64}
+    constraint_dual::Vector{T}
     # Timers
     initialize_timer::Float64
     eval_objective_timer::Float64
@@ -223,14 +228,14 @@ mutable struct Evaluator{B} <: MOI.AbstractNLPEvaluator
     eval_hessian_lagrangian_timer::Float64
 
     function Evaluator(
-        model::Model,
+        model::Model{T},
         backend::B = nothing,
-    ) where {B<:Union{Nothing,MOI.AbstractNLPEvaluator}}
-        return new{B}(
+    ) where {T,B<:Union{Nothing,MOI.AbstractNLPEvaluator}}
+        return new{T,B}(
             model,
             backend,
             ConstraintIndex[],
-            Float64[],
+            T[],
             0.0,
             0.0,
             0.0,

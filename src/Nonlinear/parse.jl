@@ -9,8 +9,8 @@
 
 Parse `input` into a [`Expression`](@ref).
 """
-function parse_expression(data::Model, input)
-    expr = Expression()
+function parse_expression(data::Model{T}, input) where {T}
+    expr = Expression{T}()
     parse_expression(data, expr, input, -1)
     return expr
 end
@@ -382,8 +382,13 @@ function parse_expression(
     return
 end
 
-function parse_expression(::Model, expr::Expression, x::Real, parent_index::Int)
-    push!(expr.values, convert(Float64, x)::Float64)
+function parse_expression(
+    ::Model{T},
+    expr::Expression{T},
+    x::Real,
+    parent_index::Int,
+) where {T}
+    push!(expr.values, convert(T, x)::T)
     push!(expr.nodes, Node(NODE_VALUE, length(expr.values), parent_index))
     return
 end

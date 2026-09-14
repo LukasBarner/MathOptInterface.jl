@@ -1438,6 +1438,26 @@ function test_intercept_ForwardDiff_MethodError()
     return
 end
 
+function test_add_parameter_non_float64()
+    model = MOI.Nonlinear.Model{BigFloat}()
+    p = MOI.Nonlinear.add_parameter(model, 0.01)
+    @test p == MOI.Nonlinear.ParameterIndex(1)
+    @test model[p] isa BigFloat
+    @test model[p] == BigFloat(0.01)
+end
+
+function test_expression_non_float64()
+    model = MOI.Nonlinear.Model{BigFloat}()
+    x = MOI.VariableIndex(1)
+
+    index = MOI.Nonlinear.add_expression(model, :($x + 1.25))
+    expr = model[index]
+
+    @test expr isa MOI.Nonlinear.Expression{BigFloat}
+    @test eltype(expr.values) == BigFloat
+    @test expr.values == BigFloat[BigFloat(1.25)]
+end
+
 end  # TestNonlinear
 
 TestNonlinear.runtests()

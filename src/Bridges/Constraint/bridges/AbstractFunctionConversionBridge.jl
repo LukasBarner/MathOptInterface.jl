@@ -305,11 +305,11 @@ function conversion_cost(
     ::Type{
         <:Union{
             MOI.VariableIndex,
-            MOI.ScalarAffineFunction{Float64},
-            MOI.ScalarQuadraticFunction{Float64},
+            MOI.ScalarAffineFunction{T},
+            MOI.ScalarQuadraticFunction{T},
         },
     },
-)
+) where {T}
     return 100.0
 end
 

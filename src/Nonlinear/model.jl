@@ -109,15 +109,15 @@ end
 
 """
     add_constraint(
-        model::Model,
+        model::Model{T},
         func,
         set::Union{
-            MOI.GreaterThan{Float64},
-            MOI.LessThan{Float64},
-            MOI.Interval{Float64},
-            MOI.EqualTo{Float64},
+            MOI.GreaterThan{T},
+            MOI.LessThan{T},
+            MOI.Interval{T},
+            MOI.EqualTo{T},
         },
-    )
+    ) where {T}
 
 Parse `func` and `set` into a [`Constraint`](@ref) and add to `model`. Returns a
 [`ConstraintIndex`](@ref) that can be used to delete the constraint or query
@@ -135,19 +135,19 @@ MathOptInterface.Nonlinear.ConstraintIndex(1)
 ```
 """
 function add_constraint(
-    model::Model,
+    model::Model{T},
     func,
     set::Union{
-        MOI.GreaterThan{Float64},
-        MOI.LessThan{Float64},
-        MOI.Interval{Float64},
-        MOI.EqualTo{Float64},
+        MOI.GreaterThan{T},
+        MOI.LessThan{T},
+        MOI.Interval{T},
+        MOI.EqualTo{T},
     },
-)
+) where {T}
     f = parse_expression(model, func)
     model.last_constraint_index += 1
     index = ConstraintIndex(model.last_constraint_index)
-    model.constraints[index] = Constraint(f, set)
+    model.constraints[index] = Constraint{T}(f, set)
     return index
 end
 
@@ -203,7 +203,7 @@ function MOI.is_valid(model::Model, index::ConstraintIndex)
 end
 
 """
-    add_parameter(model::Model, value::Float64)::ParameterIndex
+    add_parameter(model::Model{T}, value::T) where {T}
 
 Add a new parameter to `model` with the default value `value`. Returns a
 [`ParameterIndex`](@ref) that can be interpolated into other input expressions
@@ -229,8 +229,8 @@ julia> c = MOI.Nonlinear.add_constraint(model, :(\$x^2 - \$p), MOI.LessThan(0.0)
 MathOptInterface.Nonlinear.ConstraintIndex(1)
 ```
 """
-function add_parameter(model::Model, value::Float64)
-    push!(model.parameters, value)
+function add_parameter(model::Model{T}, value::Real) where {T}
+    push!(model.parameters, convert(T, value))
     return ParameterIndex(length(model.parameters))
 end
 
@@ -238,8 +238,12 @@ function Base.getindex(model::Model, p::ParameterIndex)
     return model.parameters[p.value]
 end
 
-function Base.setindex!(model::Model, value::Real, p::ParameterIndex)
-    return model.parameters[p.value] = convert(Float64, value)::Float64
+function Base.setindex!(
+    model::Model{T},
+    value::Real,
+    p::ParameterIndex,
+) where {T}
+    return model.parameters[p.value] = convert(T, value)::T
 end
 
 """
@@ -318,22 +322,25 @@ of decision variable `x::MOI.VariableIndex`.
 """
 function evaluate(
     f::AbstractDict,
-    model::Model,
-    expr::Expression;
-    evaluated_expressions = Dict{Int,Float64}(),
-)
-    storage = zeros(length(expr.nodes))
+    model::Model{T},
+    expr::Expression{T};
+    evaluated_expressions = Dict{Int,T}(),
+) where {T}
+    storage = zeros(T, length(expr.nodes))
     adj = adjacency_matrix(expr.nodes)
     children_arr = SparseArrays.rowvals(adj)
-    # An arbitrary limit on the potential input size of a multivariate
-    # operation. This will get resized if need-be.
-    input_cache = zeros(10)
+
+    input_cache = zeros(T, 10)
+
     for k in length(expr.nodes):-1:1
         node = expr.nodes[k]
+
         if node.type == NODE_MOI_VARIABLE
             storage[k] = f[MOI.VariableIndex(node.index)]
+
         elseif node.type == NODE_VALUE
             storage[k] = expr.values[node.index]
+
         elseif node.type == NODE_SUBEXPRESSION
             if !haskey(evaluated_expressions, node.index)
                 evaluated_expressions[node.index] = evaluate(
@@ -344,36 +351,47 @@ function evaluate(
                 )
             end
             storage[k] = evaluated_expressions[node.index]
+
         elseif node.type == NODE_PARAMETER
             storage[k] = model.parameters[node.index]
+
         elseif node.type == NODE_CALL_MULTIVARIATE
             children_indices = SparseArrays.nzrange(adj, k)
             N = length(children_indices)
+
             if length(input_cache) < N
                 resize!(input_cache, N)
             end
+
             f_input = view(input_cache, 1:N)
+
             for (r, i) in enumerate(children_indices)
                 f_input[r] = storage[children_arr[i]]
             end
+
             storage[k] = eval_multivariate_function(
                 model.operators,
                 model.operators.multivariate_operators[node.index],
                 f_input,
             )
+
         elseif node.type == NODE_CALL_UNIVARIATE
             child_idx = children_arr[adj.colptr[k]]
+
             storage[k] = eval_univariate_function(
                 model.operators,
                 node.index,
                 storage[child_idx],
             )
+
         elseif node.type == NODE_COMPARISON
             children_idx = SparseArrays.nzrange(adj, k)
             result = true
+
             for r in 2:length(children_idx)
                 lhs = children_arr[children_idx[r-1]]
                 rhs = children_arr[children_idx[r]]
+
                 result &= eval_comparison_function(
                     model.operators,
                     model.operators.comparison_operators[node.index],
@@ -381,20 +399,25 @@ function evaluate(
                     storage[rhs],
                 )
             end
+
             storage[k] = result
+
         else
             @assert node.type == NODE_LOGIC
+
             children_idx = SparseArrays.nzrange(adj, k)
             lhs = children_arr[children_idx[1]]
             rhs = children_arr[children_idx[2]]
+
             storage[k] = eval_logic_function(
                 model.operators,
                 model.operators.logic_operators[node.index],
-                storage[lhs] == 1,
-                storage[rhs] == 1,
+                storage[lhs] == one(T),
+                storage[rhs] == one(T),
             )
         end
     end
+
     return storage[1]
 end
 
