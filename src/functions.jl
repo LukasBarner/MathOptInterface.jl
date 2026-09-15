@@ -1538,3 +1538,10 @@ function Base.convert(
 
     return VectorNonlinearFunction(rows)
 end
+
+function Base.convert(
+    ::Type{VectorNonlinearFunction},
+    f::VectorOfVariables,
+)
+    return VectorNonlinearFunction(Any[f.variables...])
+end
