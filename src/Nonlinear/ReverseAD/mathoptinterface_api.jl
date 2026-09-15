@@ -19,7 +19,10 @@ function MOI.features_available(d::NLPEvaluator)
     return [:Grad, :Jac, :JacVec, :Hess, :HessVec]
 end
 
-function MOI.initialize(d::NLPEvaluator, requested_features::Vector{Symbol})
+function MOI.initialize(
+    d::NLPEvaluator{T},
+    requested_features::Vector{Symbol},
+) where {T}
     # Check that we support the features requested by the user.
     available_features = MOI.features_available(d)
     for feature in requested_features
@@ -36,10 +39,10 @@ function MOI.initialize(d::NLPEvaluator, requested_features::Vector{Symbol})
         largest_user_input_dimension = max(largest_user_input_dimension, op.N)
     end
     d.objective = nothing
-    d.user_output_buffer = zeros(largest_user_input_dimension)
-    d.jac_storage = zeros(max(N, largest_user_input_dimension))
-    d.constraints = _FunctionStorage[]
-    d.last_x = fill(NaN, N)
+    d.user_output_buffer = zeros(T, largest_user_input_dimension)
+    d.jac_storage = zeros(T, max(N, largest_user_input_dimension))
+    d.constraints = _FunctionStorage{T}[]
+    d.last_x = fill(T(NaN), N)
     d.want_hess = :Hess in requested_features
     want_hess_storage = (:HessVec in requested_features) || d.want_hess
     coloring_storage = Coloring.IndexedSet(N)
@@ -59,12 +62,12 @@ function MOI.initialize(d::NLPEvaluator, requested_features::Vector{Symbol})
     subexpression_variables = Vector{Vector{Int}}(undef, num_subexpressions)
     subexpression_edgelist =
         Vector{Set{Tuple{Int,Int}}}(undef, num_subexpressions)
-    d.subexpressions = Vector{_SubexpressionStorage}(undef, num_subexpressions)
-    d.subexpression_forward_values = zeros(num_subexpressions)
-    d.subexpression_reverse_values = zeros(num_subexpressions)
+    d.subexpressions = Vector{_SubexpressionStorage{T}}(undef, num_subexpressions)
+    d.subexpression_forward_values = zeros(T, num_subexpressions)
+    d.subexpression_reverse_values = zeros(T, num_subexpressions)
     for k in d.subexpression_order
         # Only load expressions which actually are used
-        d.subexpression_forward_values[k] = NaN
+        d.subexpression_forward_values[k] = T(NaN)
         subex = _SubexpressionStorage(
             d.data.expressions[k],
             d.subexpression_linearity,
@@ -142,20 +145,20 @@ function MOI.initialize(d::NLPEvaluator, requested_features::Vector{Symbol})
     max_chunk = min(max_chunk, MAX_CHUNK)
     max_expr_with_sub_length = max(max_expr_with_sub_length, max_expr_length)
     if d.want_hess || want_hess_storage
-        d.input_ϵ = zeros(max_chunk * N)
-        d.output_ϵ = zeros(max_chunk * N)
+        d.input_ϵ = zeros(T, max_chunk * N)
+        d.output_ϵ = zeros(T, max_chunk * N)
         #
-        d.partials_storage_ϵ = zeros(max_chunk * max_expr_length)
-        d.storage_ϵ = zeros(max_chunk * max_expr_with_sub_length)
+        d.partials_storage_ϵ = zeros(T, max_chunk * max_expr_length)
+        d.storage_ϵ = zeros(T, max_chunk * max_expr_with_sub_length)
         #
         len = max_chunk * length(d.subexpressions)
-        d.subexpression_forward_values_ϵ = zeros(len)
-        d.subexpression_reverse_values_ϵ = zeros(len)
+        d.subexpression_forward_values_ϵ = zeros(T, len)
+        d.subexpression_reverse_values_ϵ = zeros(T, len)
         #
         for k in d.subexpression_order
             len = max_chunk * length(d.subexpressions[k].nodes)
             resize!(d.subexpressions[k].partials_storage_ϵ, len)
-            fill!(d.subexpressions[k].partials_storage_ϵ, 0.0)
+            fill!(d.subexpressions[k].partials_storage_ϵ, zero(T))
         end
         d.max_chunk = max_chunk
         if d.want_hess
@@ -257,16 +260,16 @@ function MOI.eval_constraint_jacobian_product(d::NLPEvaluator, y, x, w)
 end
 
 function MOI.eval_constraint_jacobian_transpose_product(
-    d::NLPEvaluator,
-    y::AbstractVector{Float64},
-    x::AbstractVector{Float64},
-    w::AbstractVector{Float64},
-)
+    d::NLPEvaluator{T},
+    y::AbstractVector{T},
+    x::AbstractVector{T},
+    w::AbstractVector{T},
+) where {T}
     _reverse_mode(d, x)
-    fill!(y, 0.0)
+    fill!(y, zero(T))
     for (row, expr) in enumerate(d.constraints)
         for col in expr.grad_sparsity
-            d.jac_storage[col] = 0.0
+            d.jac_storage[col] = zero(T)
         end
         _extract_reverse_pass(d.jac_storage, d, expr)
         for col in expr.grad_sparsity

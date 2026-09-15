@@ -32,12 +32,12 @@ Returns the number of non-zeros in the computed Hessian, which will be used to
 update the offset for the next call.
 """
 function _eval_hessian(
-    d::NLPEvaluator,
-    ex::_FunctionStorage,
-    H::AbstractVector{Float64},
-    scale::Float64,
+    d::NLPEvaluator{T},
+    ex::_FunctionStorage{T},
+    H::AbstractVector{T},
+    scale::T,
     nzcount::Int,
-)::Int
+) where {T}
     if ex.linearity == LINEAR
         @assert length(ex.hess_I) == 0
         return 0
@@ -113,18 +113,34 @@ end
 # A wrapper function to avoid dynamic dispatch.
 function _generate_hessian_slice_inner()
     exprs = map(1:MAX_CHUNK) do id
-        T = ForwardDiff.Partials{id,Float64}
-        return :(return _hessian_slice_inner(d, ex, $T))
+        return :(
+            return _hessian_slice_inner(
+                d,
+                ex,
+                ForwardDiff.Partials{$id,T},
+            )
+        )
     end
     return MOI.Nonlinear._create_binary_switch(1:MAX_CHUNK, exprs)
 end
 
-@eval function _hessian_slice_inner(d, ex, id::Int)
+@eval function _hessian_slice_inner(
+    d::NLPEvaluator{T},
+    ex,
+    id::Int,
+) where {T}
     $(_generate_hessian_slice_inner())
     return error("Invalid chunk size: $id")
 end
+function _hessian_slice_inner(d, ex, id::Int)
+    return error("Invalid chunk size: $id")
+end
 
-function _hessian_slice_inner(d, ex, ::Type{T}) where {T}
+function _hessian_slice_inner(
+    d::NLPEvaluator{S},
+    ex,
+    ::Type{T},
+) where {S,T}
     output_ϵ = _reinterpret_unsafe(T, d.output_ϵ)
     subexpr_forward_values_ϵ =
         _reinterpret_unsafe(T, d.subexpression_forward_values_ϵ)
@@ -142,7 +158,7 @@ function _hessian_slice_inner(d, ex, ::Type{T}) where {T}
         _reinterpret_unsafe(T, d.subexpression_reverse_values_ϵ)
     for i in ex.dependent_subexpressions
         subexpr_reverse_values_ϵ[i] = zero(T)
-        d.subexpression_reverse_values[i] = 0.0
+        d.subexpression_reverse_values[i] = zero(S)
     end
     _reverse_eval_ϵ(
         output_ϵ,
@@ -151,7 +167,7 @@ function _hessian_slice_inner(d, ex, ::Type{T}) where {T}
         _reinterpret_unsafe(T, d.partials_storage_ϵ),
         d.subexpression_reverse_values,
         subexpr_reverse_values_ϵ,
-        1.0,
+        one(S),
         zero(T),
     )
     for i in length(ex.dependent_subexpressions):-1:1
@@ -298,7 +314,7 @@ function _forward_eval_ϵ(
                         storage_ϵ[k],
                     )
                     # TODO(odow): fix me to use NaNMath.jl instead
-                    log_base_gnum = base_gnum < 0 ? NaN : log(base_gnum)
+                    log_base_gnum = base_gnum < 0 ? NaN : Nonlinear._log(base_gnum)
                     partials_storage_ϵ[ix2] =
                         ForwardDiff.partials(result_gnum * log_base_gnum)
                 elseif op == 5 # :/

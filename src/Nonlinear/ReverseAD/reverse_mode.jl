@@ -189,17 +189,18 @@ function _forward_eval(
                 @inbounds ix2 = children_arr[idx2]
                 @inbounds base = f.forward_storage[ix1]
                 @inbounds exponent = f.forward_storage[ix2]
-                if exponent == 2
+                if exponent == T(2)
                     @inbounds f.forward_storage[k] = base * base
-                    @inbounds f.partials_storage[ix1] = 2 * base
-                elseif exponent == 1
+                    @inbounds f.partials_storage[ix1] = T(2) * base
+                elseif exponent == one(T)
                     @inbounds f.forward_storage[k] = base
-                    @inbounds f.partials_storage[ix1] = 1.0
+                    @inbounds f.partials_storage[ix1] = one(T)
                 else
                     f.forward_storage[k] = pow(base, exponent)
-                    f.partials_storage[ix1] = exponent * pow(base, exponent - 1)
+                    f.partials_storage[ix1] =
+                        exponent * pow(base, exponent - one(T))
                 end
-                f.partials_storage[ix2] = f.forward_storage[k] * log(base)
+                f.partials_storage[ix2] = f.forward_storage[k] * Nonlinear._log(base)
             elseif node.index == 5 # :/
                 @assert N == 2
                 idx1 = first(children_indices)
@@ -208,7 +209,7 @@ function _forward_eval(
                 @inbounds ix2 = children_arr[idx2]
                 @inbounds numerator = f.forward_storage[ix1]
                 @inbounds denominator = f.forward_storage[ix2]
-                recip_denominator = 1 / denominator
+                recip_denominator = one(T) / denominator
                 @inbounds f.partials_storage[ix1] = recip_denominator
                 f.partials_storage[ix2] =
                     -numerator * recip_denominator * recip_denominator
@@ -308,7 +309,7 @@ function _reverse_eval(
     # f.nodes is already in order such that parents always appear before
     # children so a forward pass through nodes is a backwards pass through the
     # tree.
-    f.reverse_storage[1] = one(Float64)
+    f.reverse_storage[1] = one(eltype(f.reverse_storage))
     for k in 2:length(f.nodes)
         node = f.nodes[k]
         if node.type == Nonlinear.NODE_VALUE ||
@@ -344,9 +345,14 @@ function _extract_reverse_pass(
     f::_FunctionStorage,
 ) where {T}
     for i in f.dependent_subexpressions
-        d.subexpression_reverse_values[i] = 0.0
+        d.subexpression_reverse_values[i] = zero(T)
     end
-    _extract_reverse_pass_inner(g, f, d.subexpression_reverse_values, 1.0)
+    _extract_reverse_pass_inner(
+        g,
+        f,
+        d.subexpression_reverse_values,
+        one(T),
+    )
     for i in length(f.dependent_subexpressions):-1:1
         k = f.dependent_subexpressions[i]
         _extract_reverse_pass_inner(

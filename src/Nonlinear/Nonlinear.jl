@@ -32,6 +32,11 @@ import NaNMath:
     pow,
     sqrt
 
+# NaNMath only implements log for the built-in floating-point types.
+# Below is a temporary fix...
+_log(x::Union{Float16,Float32,Float64}) = log(x)
+_log(x::Real) = Base.log(x)
+
 include("univariate_expressions.jl")
 include("operators.jl")
 include("types.jl")

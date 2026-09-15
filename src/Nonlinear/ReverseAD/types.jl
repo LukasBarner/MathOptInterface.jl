@@ -4,22 +4,22 @@
 # Use of this source code is governed by an MIT-style license that can be found
 # in the LICENSE.md file or at https://opensource.org/licenses/MIT.
 
-struct _SubexpressionStorage
+struct _SubexpressionStorage{T}
     nodes::Vector{Nonlinear.Node}
     adj::SparseArrays.SparseMatrixCSC{Bool,Int}
-    const_values::Vector{Float64}
-    forward_storage::Vector{Float64}
-    partials_storage::Vector{Float64}
-    reverse_storage::Vector{Float64}
-    partials_storage_ϵ::Vector{Float64}
+    const_values::Vector{T}
+    forward_storage::Vector{T}
+    partials_storage::Vector{T}
+    reverse_storage::Vector{T}
+    partials_storage_ϵ::Vector{T}
     linearity::Linearity
 
     function _SubexpressionStorage(
-        expr::Nonlinear.Expression,
+        expr::Nonlinear.Expression{T},
         subexpression_linearity,
         moi_index_to_consecutive_index,
         want_hess::Bool,
-    )
+    ) where {T}
         nodes =
             _replace_moi_variables(expr.nodes, moi_index_to_consecutive_index)
         adj = Nonlinear.adjacency_matrix(nodes)
@@ -29,49 +29,49 @@ struct _SubexpressionStorage
         else
             NONLINEAR
         end
-        return new(
+        return new{T}(
             nodes,
             adj,
             expr.values,
-            zeros(N),  # forward_storage,
-            zeros(N),  # partials_storage,
-            zeros(N),  # reverse_storage,
-            Float64[],
+            zeros(T, N),  # forward_storage,
+            zeros(T, N),  # partials_storage,
+            zeros(T, N),  # reverse_storage,
+            T[],
             linearity,
         )
     end
 end
 
-struct _FunctionStorage
+struct _FunctionStorage{T}
     nodes::Vector{Nonlinear.Node}
     adj::SparseArrays.SparseMatrixCSC{Bool,Int}
-    const_values::Vector{Float64}
-    forward_storage::Vector{Float64}
-    partials_storage::Vector{Float64}
-    reverse_storage::Vector{Float64}
+    const_values::Vector{T}
+    forward_storage::Vector{T}
+    partials_storage::Vector{T}
+    reverse_storage::Vector{T}
     grad_sparsity::Vector{Int}
     # Nonzero pattern of Hessian matrix
     hess_I::Vector{Int}
     hess_J::Vector{Int}
     rinfo::Coloring.RecoveryInfo # coloring info for hessians
-    seed_matrix::Matrix{Float64}
+    seed_matrix::Matrix{T}
     linearity::Linearity
     # subexpressions which this function depends on, ordered for forward pass.
     dependent_subexpressions::Vector{Int}
 
     function _FunctionStorage(
         nodes::Vector{Nonlinear.Node},
-        const_values,
+        const_values::Vector{T},
         num_variables,
         coloring_storage::Coloring.IndexedSet,
         want_hess::Bool,
-        subexpressions::Vector{_SubexpressionStorage},
+        subexpressions::Vector{_SubexpressionStorage{T}},
         dependent_subexpressions,
         subexpression_linearity,
         subexpression_edgelist,
         subexpression_variables,
         moi_index_to_consecutive_index,
-    )
+    ) where {T}
         nodes = _replace_moi_variables(nodes, moi_index_to_consecutive_index)
         adj = Nonlinear.adjacency_matrix(nodes)
         N = length(nodes)
@@ -99,14 +99,14 @@ struct _FunctionStorage
                 num_variables,
                 coloring_storage,
             )
-            seed_matrix = Coloring.seed_matrix(rinfo)
-            return new(
+            seed_matrix = T.(Coloring.seed_matrix(rinfo))
+            return new{T}(
                 nodes,
                 adj,
                 const_values,
-                zeros(N),  # forward_storage,
-                zeros(N),  # partials_storage,
-                zeros(N),  # reverse_storage,
+                zeros(T, N),  # forward_storage,
+                zeros(T, N),  # partials_storage,
+                zeros(T, N),  # reverse_storage,
                 grad_sparsity,
                 hess_I,
                 hess_J,
@@ -116,18 +116,18 @@ struct _FunctionStorage
                 dependent_subexpressions,
             )
         else
-            return new(
+            return new{T}(
                 nodes,
                 adj,
                 const_values,
-                zeros(N),  # forward_storage,
-                zeros(N),  # partials_storage,
-                zeros(N),  # reverse_storage,
+                zeros(T, N),  # forward_storage,
+                zeros(T, N),  # partials_storage,
+                zeros(T, N),  # reverse_storage,
                 grad_sparsity,
                 Int[],
                 Int[],
                 Coloring.RecoveryInfo(),
-                Array{Float64}(undef, 0, 0),
+                Matrix{T}(undef, 0, 0),
                 NONLINEAR,
                 dependent_subexpressions,
             )
@@ -147,47 +147,47 @@ interface.
 !!! warning
     Before using, you must initialize the evaluator using `MOI.initialize`.
 """
-mutable struct NLPEvaluator <: MOI.AbstractNLPEvaluator
+mutable struct NLPEvaluator{T} <: MOI.AbstractNLPEvaluator
     data::Nonlinear.Model
     ordered_variables::Vector{MOI.VariableIndex}
 
-    objective::Union{Nothing,_FunctionStorage}
-    constraints::Vector{_FunctionStorage}
-    subexpressions::Vector{_SubexpressionStorage}
+    objective::Union{Nothing,_FunctionStorage{T}}
+    constraints::Vector{_FunctionStorage{T}}
+    subexpressions::Vector{_SubexpressionStorage{T}}
     subexpression_order::Vector{Int}
     # Storage for the subexpressions in reverse-mode automatic differentiation.
-    subexpression_forward_values::Vector{Float64}
-    subexpression_reverse_values::Vector{Float64}
+    subexpression_forward_values::Vector{T}
+    subexpression_reverse_values::Vector{T}
     subexpression_linearity::Vector{Linearity}
 
     # A cache of the last x. This is used to guide whether we need to re-run
     # reverse-mode automatic differentiation.
-    last_x::Vector{Float64}
+    last_x::Vector{T}
 
     # Temporary storage for computing Jacobians. This is also used as temporary
     # storage for the input of multivariate functions.
-    jac_storage::Vector{Float64}
+    jac_storage::Vector{T}
     # Temporary storage for the gradient of multivariate functions
-    user_output_buffer::Vector{Float64}
+    user_output_buffer::Vector{T}
 
     # storage for computing hessians
-    # these Float64 vectors are reinterpreted to hold multiple epsilon components
+    # these T vectors are reinterpreted to hold multiple epsilon components
     # so the length should be multiplied by the maximum number of epsilon components
     disable_2ndorder::Bool # don't offer Hess or HessVec
     want_hess::Bool
-    partials_storage_ϵ::Vector{Float64} # (longest expression excluding subexpressions)
-    storage_ϵ::Vector{Float64} # (longest expression including subexpressions)
-    input_ϵ::Vector{Float64} # (number of variables)
-    output_ϵ::Vector{Float64} # (number of variables)
-    subexpression_forward_values_ϵ::Vector{Float64} # (number of subexpressions)
-    subexpression_reverse_values_ϵ::Vector{Float64} # (number of subexpressions)
+    partials_storage_ϵ::Vector{T} # (longest expression excluding subexpressions)
+    storage_ϵ::Vector{T} # (longest expression including subexpressions)
+    input_ϵ::Vector{T} # (number of variables)
+    output_ϵ::Vector{T} # (number of variables)
+    subexpression_forward_values_ϵ::Vector{T} # (number of subexpressions)
+    subexpression_reverse_values_ϵ::Vector{T} # (number of subexpressions)
     hessian_sparsity::Vector{Tuple{Int64,Int64}}
     max_chunk::Int # chunk size for which we've allocated storage
 
     function NLPEvaluator(
-        data::Nonlinear.Model,
+        data::Nonlinear.Model{T},
         ordered_variables::Vector{MOI.VariableIndex},
-    )
-        return new(data, ordered_variables)
+    ) where {T}
+        return new{T}(data, ordered_variables)
     end
 end
