@@ -1481,3 +1481,60 @@ for f in (
 )
     @eval Base.convert(::Type{$f{T}}, x::$f{T}) where {T} = x
 end
+
+function Base.convert(
+    ::Type{VectorNonlinearFunction},
+    f::VectorAffineFunction{T},
+) where {T}
+    terms = [ScalarAffineTerm{T}[] for _ in f.constants]
+
+    for term in f.terms
+        push!(terms[term.output_index], term.scalar_term)
+    end
+
+    rows = [
+        convert(
+            ScalarNonlinearFunction,
+            ScalarAffineFunction(terms[i], f.constants[i]),
+        )
+        for i in eachindex(f.constants)
+    ]
+
+    return VectorNonlinearFunction(rows)
+end
+
+function Base.convert(
+    ::Type{VectorNonlinearFunction},
+    f::VectorQuadraticFunction{T},
+) where {T}
+    quadratic_terms = [ScalarQuadraticTerm{T}[] for _ in f.constants]
+    affine_terms = [ScalarAffineTerm{T}[] for _ in f.constants]
+
+    for term in f.quadratic_terms
+        push!(
+            quadratic_terms[term.output_index],
+            term.scalar_term,
+        )
+    end
+
+    for term in f.affine_terms
+        push!(
+            affine_terms[term.output_index],
+            term.scalar_term,
+        )
+    end
+
+    rows = [
+        convert(
+            ScalarNonlinearFunction,
+            ScalarQuadraticFunction(
+                quadratic_terms[i],
+                affine_terms[i],
+                f.constants[i],
+            ),
+        )
+        for i in eachindex(f.constants)
+    ]
+
+    return VectorNonlinearFunction(rows)
+end
