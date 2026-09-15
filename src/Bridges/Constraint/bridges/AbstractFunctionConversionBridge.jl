@@ -496,3 +496,33 @@ const ToScalarNonlinearBridge{T,G,S} =
 
 const ToScalarNonlinear{T,OT<:MOI.ModelLike} =
     SingleBridgeOptimizer{ToScalarNonlinearBridge{T},OT}
+
+# AbstractVectorFunction -> VectorNonlinearFunction
+
+"""
+    ToVectorNonlinearBridge{T,G,S} <: AbstractFunctionConversionBridge{G,S}
+
+`ToVectorNonlinearBridge` implements the following reformulation:
+
+  * ``g(x) \\in S`` into ``f(x) \\in S``
+
+where `g` is an abstract vector function and `f` is a
+[`MOI.VectorNonlinearFunction`](@ref).
+
+## Source node
+
+`ToVectorNonlinearBridge` supports:
+
+  * `G<:AbstractVectorFunction` in `S`
+
+## Target nodes
+
+`ToVectorNonlinearBridge` creates:
+
+  * [`MOI.VectorNonlinearFunction`](@ref) in `S`
+"""
+const ToVectorNonlinearBridge{T,G,S} =
+    FunctionConversionBridge{T,MOI.VectorNonlinearFunction,G,S}
+
+const ToVectorNonlinear{T,OT<:MOI.ModelLike} =
+    SingleBridgeOptimizer{ToVectorNonlinearBridge{T},OT}

@@ -136,6 +136,7 @@ function add_all_bridges(model, ::Type{T}) where {T}
     MOI.Bridges.add_bridge(model, SquareBridge{T})
     MOI.Bridges.add_bridge(model, TableToMILPBridge{T})
     MOI.Bridges.add_bridge(model, ToScalarNonlinearBridge{T})
+    MOI.Bridges.add_bridge(model, ToVectorNonlinearBridge{T})
     MOI.Bridges.add_bridge(model, ToScalarQuadraticBridge{T})
     MOI.Bridges.add_bridge(model, ToVectorQuadraticBridge{T})
     MOI.Bridges.add_bridge(model, VectorFunctionizeBridge{T})
